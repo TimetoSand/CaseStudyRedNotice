@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Red Notice</title>
+</head>
+<body>
+    <div id="display">
+        <!-- Messages will be inserted here by the JavaScript code -->
+    </div>
+    <!--
+    {% for message in messages %}
+        <p>
+            <strong>Name:</strong> {{ message.name }}<br>
+            <strong>Age:</strong> {{ message.age }}<br>
+            <strong>Nationality:</strong> {{ message.nationality }}<br>
+            <strong>Timestamp:</strong> {{ message.timestamp }}
+        </p>
+    {% endfor %}
+    -->
+    <script src="{{ url_for('static', filename='script.js') }}"></script>
+</body>
+</html>

@@ -1,0 +1,38 @@
+version: '3'
+services:
+  rabbitmq:
+    image: rabbitmq:3-management
+    volumes:
+      - ./rabbitmq/rabbitmq.conf:/etc/rabbitmq/rabbitmq.conf
+    ports:
+      - 15672:15672
+      - 5672:5672
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 1m30s
+      timeout: 30s
+      retries: 5
+    networks:
+      - frn_network
+
+  data_collection:
+    build: ./data_collection
+    depends_on:
+      - rabbitmq
+    networks:
+      - frn_network  
+
+  web_server:
+    build: ./web_server
+    ports:
+      - 5000:5000
+    depends_on:
+      - rabbitmq
+    networks:
+      - frn_network  
+    env_file:
+      - .env
+
+networks:
+  frn_network:
+    driver: bridge

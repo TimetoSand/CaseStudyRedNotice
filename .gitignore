@@ -1,0 +1,24 @@
+# .gitignore
+
+# Ignore Visual Studio Code files
+.vscode/
+
+
+# Ignore build files
+node_modules/
+dist/
+
+# Ignore logs
+*.log
+
+# Ignore system files
+.DS_Store
+Thumbs.db
+
+# Ignore environment variables
+.env
+
+# Ignore myenv directory
+myenv/
+
+rabbitmq/definitions.json

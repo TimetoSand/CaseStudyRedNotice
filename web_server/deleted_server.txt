@@ -1,0 +1,161 @@
+from flask import Flask, request, render_template
+import pika
+import sqlite3
+import threading
+from flask import jsonify
+import json
+
+app = Flask(__name__)
+
+
+def establish_rabbitmq_connection():
+    max_retries = 10
+    retries = 0
+
+    while retries < max_retries:
+        try:
+            connection = pika.BlockingConnection(pika.ConnectionParameters('rabbitmq'))
+            return connection
+        except pika.exceptions.AMQPConnectionError:
+            print("Failed to connect to RabbitMQ. Retrying...")
+            retries += 1
+
+    raise Exception("Failed to connect to RabbitMQ after multiple retries.")
+
+
+
+# Establish a connection to your SQLite database
+db_connection = sqlite3.connect('my_database.db')
+cursor = db_connection.cursor()
+
+# Create a table in your database if it doesn't exist
+cursor.execute('''
+    CREATE TABLE IF NOT EXISTS messages (
+        id INTEGER PRIMARY KEY,
+        name TEXT,
+        age TEXT,
+        nationality TEXT,
+        timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+''')
+
+@app.route('/get_message', methods=['GET'])
+def get_message():
+    # Establish a connection to RabbitMQ
+    connection = establish_rabbitmq_connection()
+    channel = connection.channel()
+
+    # Declare your queue. If the queue doesn't exist, RabbitMQ will create it.
+    channel.queue_declare(queue='helloWanted')
+
+    # Fetch a single message from the queue
+    method_frame, header_frame, body = channel.basic_get('helloWanted')
+
+    if method_frame:
+        # Acknowledge the message
+        channel.basic_ack(method_frame.delivery_tag)
+
+        # Parse the message body
+        message = json.loads(body)
+
+        # Open a connection to the database
+        db_connection = sqlite3.connect('my_database.db')
+        cursor = db_connection.cursor()
+
+        # Insert the message into the database
+        cursor.execute('INSERT INTO messages (name, age, nationality) VALUES (?, ?, ?)', (message['name'], message['age'], message['nationality']))
+        db_connection.commit()
+        db_connection.close()
+
+        # Close the connection to RabbitMQ
+        connection.close()
+
+        return {'status': 'Message received and saved to database', 'message': message}
+    else:
+        # Close the connection to RabbitMQ
+        connection.close()
+        return {'status': 'No message in queue'}
+
+@app.route('/message', methods=['POST'])
+def send_message():
+    # Get the message from the request body
+    data = request.get_json()
+    if 'message' not in data:
+         return {'status': 'Error', 'message': 'No message provided'}, 400
+    else:
+        message = data['message']
+
+    # Establish a connection to RabbitMQ
+    connection = establish_rabbitmq_connection()
+
+    channel = connection.channel()
+
+    # Declare your queue. If the queue doesn't exist, RabbitMQ will create it.
+    channel.queue_declare(queue='helloWanted')
+
+    # Publish the message to your queue
+    channel.basic_publish(exchange='', routing_key='helloWanted', body=message)
+
+    # Open a connection to the database
+    db_connection = sqlite3.connect('my_database.db')
+    cursor = db_connection.cursor()
+
+    # Insert the message into the database
+    cursor.execute('INSERT INTO messages (name, age, nationality) VALUES (?, ?, ?)', (message['name'], message['age'], message['nationality']))
+
+    db_connection.commit()
+    db_connection.close()
+
+    connection.close()
+
+    return {'status': 'Message sent'}
+
+@app.route('/')
+def home():
+    db_connection = sqlite3.connect('my_database.db')
+    cursor = db_connection.cursor()
+    cursor.execute('SELECT * FROM messages')
+    messages = cursor.fetchall()
+    db_connection.close()
+    return render_template('index.html', messages=messages)
+
+@app.route('/data', methods=['GET'])
+def get_data():
+    db_connection = sqlite3.connect('my_database.db')
+    cursor = db_connection.cursor()
+    cursor.execute('SELECT * FROM messages')
+    messages = cursor.fetchall()
+    messages = [dict(row) for row in messages]
+    db_connection.close()
+    return jsonify(messages)
+
+if __name__ == '__main__':
+    # Start a connection to RabbitMQ for listening to messages
+    try:
+        connection = establish_rabbitmq_connection()
+    except pika.exceptions.AMQPConnectionError as e:
+        print(f"Error connecting to RabbitMQ: {str(e)}")
+
+    channel = connection.channel()
+    channel.queue_declare(queue='helloWanted')
+
+    def callback(ch, method, properties, body):
+        message = json.loads(body)
+
+        # Open a connection to the database
+        db_connection = sqlite3.connect('my_database.db')
+        cursor = db_connection.cursor()
+
+        # Insert the message into the database
+        cursor.execute('INSERT INTO messages (name, age, nationality) VALUES (?, ?, ?)',
+                       (message['name'], message['age'], message['nationality']))
+        db_connection.commit()
+        db_connection.close()
+
+    # Set up the message callback
+    channel.basic_consume(queue='helloWanted', on_message_callback=callback, auto_ack=True)
+
+    # Start consuming messages
+    channel.start_consuming()
+
+    app.run(host='0.0.0.0', port=5000)
