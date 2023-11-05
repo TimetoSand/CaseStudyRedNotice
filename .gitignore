@@ -22,3 +22,4 @@ Thumbs.db
 myenv/
 
 rabbitmq/definitions.json
+data_collection/geckodriver
